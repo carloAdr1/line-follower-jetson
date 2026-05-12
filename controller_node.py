@@ -1,4 +1,8 @@
 import urllib.request
+import csv
+import os
+from datetime import datetime
+
 import rclpy
 from rclpy.node import Node
 from geometry_msgs.msg import Vector3
@@ -33,9 +37,14 @@ class ControllerNode(Node):
         self.stop_active = False
         self.stop_until = None
         self.stop_latched = False
+        self.stop_detected = False
+
+        self.control_v = 0.0
+        self.log_data = []
+        self.start_time_s = self.get_clock().now().nanoseconds / 1e9
 
         self.create_timer(0.1, self.loop)
-        self.get_logger().info("controller_node listo: línea + STOP 5s")
+        self.get_logger().info("controller_node listo: línea + STOP 5s + logger CSV")
 
     def http(self, cmd):
         try:
@@ -67,23 +76,21 @@ class ControllerNode(Node):
         self.last_lane_time = self.get_clock().now()
 
     def stop_cb(self, msg):
+        self.stop_detected = bool(msg.data)
         now_s = self.get_clock().now().nanoseconds / 1e9
 
-        # Se activa solo cuando aparece STOP y no está ya detenido
         if msg.data and not self.stop_active and not self.stop_latched:
             self.stop_active = True
             self.stop_latched = True
             self.stop_until = now_s + STOP_SECONDS
             self.get_logger().info("STOP detectado: deteniendo 5 segundos")
 
-        # Cuando ya no ve rojo, se permite detectar otro STOP después
         if not msg.data and not self.stop_active:
             self.stop_latched = False
 
     def loop(self):
         now_s = self.get_clock().now().nanoseconds / 1e9
 
-        # Prioridad máxima: STOP
         if self.stop_active:
             self.sd('x')
             self.ss('c')
@@ -96,6 +103,7 @@ class ControllerNode(Node):
                 self.sb('brake_off')
                 self.get_logger().info("STOP terminado: regresando a seguimiento normal")
 
+            self.save_sample(now_s)
             return
 
         elapsed = (self.get_clock().now() - self.last_lane_time).nanoseconds / 1e9
@@ -105,9 +113,9 @@ class ControllerNode(Node):
             self.ss('c')
             self.sb('brake_on')
             self.sl('blink_off')
+            self.save_sample(now_s)
             return
 
-        # Lógica original de seguimiento
         self.sb('brake_off')
         steer = self.compute_steer(self.offset_px, self.heading_deg)
 
@@ -121,8 +129,11 @@ class ControllerNode(Node):
         else:
             self.sl('blink_off')
 
+        self.save_sample(now_s)
+
     def compute_steer(self, offset, heading):
         v = offset + heading * HEADING_K
+        self.control_v = v
 
         if v > OFFSET_HARD:
             return 'a'
@@ -135,6 +146,42 @@ class ControllerNode(Node):
         else:
             return 'c'
 
+    def save_sample(self, now_s):
+        t = now_s - self.start_time_s
+
+        self.log_data.append({
+            'time_s': t,
+            'offset_px': self.offset_px,
+            'heading_deg': self.heading_deg,
+            'control_estimated_v': self.control_v,
+            'steer_cmd': self.last_steer,
+            'drive_cmd': self.last_drive,
+            'brake_cmd': self.last_brake,
+            'blink_cmd': self.last_blink,
+            'stop_detected': int(self.stop_detected),
+            'stop_active': int(self.stop_active),
+            'lane_error_abs_px': abs(self.offset_px),
+            'heading_error_abs_deg': abs(self.heading_deg)
+        })
+
+    def save_csv(self):
+        if not self.log_data:
+            self.get_logger().warn("No hay datos para guardar.")
+            return
+
+        folder = "logs"
+        os.makedirs(folder, exist_ok=True)
+
+        filename = datetime.now().strftime("controller_log_%Y%m%d_%H%M%S.csv")
+        path = os.path.join(folder, filename)
+
+        with open(path, "w", newline="") as f:
+            writer = csv.DictWriter(f, fieldnames=self.log_data[0].keys())
+            writer.writeheader()
+            writer.writerows(self.log_data)
+
+        self.get_logger().info(f"Log guardado en: {path}")
+
 
 def main(args=None):
     rclpy.init(args=args)
@@ -145,6 +192,8 @@ def main(args=None):
     except KeyboardInterrupt:
         pass
     finally:
+        node.save_csv()
+
         for c in ['x', 'brake_on', 'blink_off', 'c']:
             node.http(c)
 
