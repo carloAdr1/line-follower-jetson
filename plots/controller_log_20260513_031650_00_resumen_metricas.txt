@@ -1,0 +1,36 @@
+Resumen cuantitativo del controlador visual
+==========================================
+
+Archivo analizado: logs/controller_log_20260513_031650.csv
+Duración total: 8.50 s
+Muestras: 85
+
+1. Error lateral de línea
+MAE |offset|: 0.894 px
+RMSE offset: 8.243 px
+Máximo |offset|: 76.000 px
+
+2. Error angular
+MAE |heading|: 4.054 deg
+RMSE heading: 12.871 deg
+Máximo |heading|: 59.036 deg
+
+3. Esfuerzo de control
+Promedio |control_v|: 6.521
+Máximo |control_v|: 88.554
+Promedio |servo_level|: 0.059
+Máximo |servo_level|: 1.000
+
+4. Sensibilidad a perturbaciones
+Promedio |d(offset)/dt|: 17.891 px/s
+Máximo |d(offset)/dt|: 760.884 px/s
+Promedio |d(heading)/dt|: 30.632 deg/s
+Máximo |d(heading)/dt|: 521.806 deg/s
+
+5. STOP
+Eventos STOP detectados: 1
+Tiempo total en alto: 5.000 s
+
+Interpretación sugerida
+-----------------------
+El offset y el heading representan los errores visuales principales. La disminución o acotamiento de sus magnitudes indica comportamiento de convergencia. El control_v representa la acción continua estimada antes de discretizarse en comandos de servo. El servo_level representa la acción real enviada al sistema de dirección. Las desviaciones móviles permiten discutir estabilidad, mientras que las derivadas absolutas permiten analizar sensibilidad ante perturbaciones visuales o cambios bruscos en la pista. Las señales stop_detected y stop_active muestran la integración del señalamiento STOP dentro del lazo de control visual.
