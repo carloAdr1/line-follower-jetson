@@ -40,11 +40,13 @@ class ControllerNode(Node):
         self.stop_detected = False
 
         self.control_v = 0.0
+        self.servo_level = 0
+
         self.log_data = []
         self.start_time_s = self.get_clock().now().nanoseconds / 1e9
 
         self.create_timer(0.1, self.loop)
-        self.get_logger().info("controller_node listo: línea + STOP 5s + logger CSV")
+        self.get_logger().info("controller_node listo: control + STOP + logging CSV")
 
     def http(self, cmd):
         try:
@@ -96,6 +98,7 @@ class ControllerNode(Node):
             self.ss('c')
             self.sb('brake_on')
             self.sl('blink_off')
+            self.servo_level = 0
 
             if self.stop_until is not None and now_s >= self.stop_until:
                 self.stop_active = False
@@ -113,10 +116,12 @@ class ControllerNode(Node):
             self.ss('c')
             self.sb('brake_on')
             self.sl('blink_off')
+            self.servo_level = 0
             self.save_sample(now_s)
             return
 
         self.sb('brake_off')
+
         steer = self.compute_steer(self.offset_px, self.heading_deg)
 
         self.ss(steer)
@@ -136,14 +141,19 @@ class ControllerNode(Node):
         self.control_v = v
 
         if v > OFFSET_HARD:
+            self.servo_level = 2
             return 'a'
         elif v > OFFSET_SOFT:
+            self.servo_level = 1
             return 'al'
         elif v < -OFFSET_HARD:
+            self.servo_level = -2
             return 'd'
         elif v < -OFFSET_SOFT:
+            self.servo_level = -1
             return 'dl'
         else:
+            self.servo_level = 0
             return 'c'
 
     def save_sample(self, now_s):
@@ -154,6 +164,7 @@ class ControllerNode(Node):
             'offset_px': self.offset_px,
             'heading_deg': self.heading_deg,
             'control_estimated_v': self.control_v,
+            'servo_level': self.servo_level,
             'steer_cmd': self.last_steer,
             'drive_cmd': self.last_drive,
             'brake_cmd': self.last_brake,
@@ -161,7 +172,9 @@ class ControllerNode(Node):
             'stop_detected': int(self.stop_detected),
             'stop_active': int(self.stop_active),
             'lane_error_abs_px': abs(self.offset_px),
-            'heading_error_abs_deg': abs(self.heading_deg)
+            'heading_error_abs_deg': abs(self.heading_deg),
+            'control_effort_abs': abs(self.control_v),
+            'servo_effort_abs': abs(self.servo_level)
         })
 
     def save_csv(self):
@@ -169,11 +182,10 @@ class ControllerNode(Node):
             self.get_logger().warn("No hay datos para guardar.")
             return
 
-        folder = "logs"
-        os.makedirs(folder, exist_ok=True)
+        os.makedirs("logs", exist_ok=True)
 
         filename = datetime.now().strftime("controller_log_%Y%m%d_%H%M%S.csv")
-        path = os.path.join(folder, filename)
+        path = os.path.join("logs", filename)
 
         with open(path, "w", newline="") as f:
             writer = csv.DictWriter(f, fieldnames=self.log_data[0].keys())
